@@ -584,6 +584,8 @@ async function animateSingle(data) {
     const a = networkNodes[seg.from], b = networkNodes[seg.to];
     if (a && b) L.polyline([[a.lat, a.lon], [b.lat, b.lon]], { color: '#fb6b6b', weight: 6, opacity: 0.85 }).addTo(pathLayer);
   });
+  
+  // Vẽ primary path ở trên cùng (sau alternative và congested)
   drawPath(data.primary_path, '#2dd4bf', false, 5);
   markStartEnd(data.primary_path[0], [data.primary_path[data.primary_path.length - 1]]);
   fitToPath(data.primary_path);
