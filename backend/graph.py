@@ -119,12 +119,16 @@ class Graph:
             self._pois = []
             for nid, data in self.nodes.items():
                 if (data["type"] == "poi" or data["type"] == "snap_poi") and data.get("name"):
+                    snap_id = data.get("snap_id", nid)
+                    snap_node = self.nodes.get(snap_id, data)
                     self._pois.append({
                         "id": nid,
-                        "snap_id": data.get("snap_id", nid),
+                        "snap_id": snap_id,
                         "name": data["name"],
                         "lat": data["lat"],
                         "lon": data["lon"],
+                        "snap_lat": snap_node["lat"],
+                        "snap_lon": snap_node["lon"],
                         "type": data["type"],
                     })
 

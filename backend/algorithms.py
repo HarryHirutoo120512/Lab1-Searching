@@ -123,6 +123,7 @@ def bfs(
         frontier_snapshot = list(queue)
         explored_list.append({
             "node": node,
+            "parent": parent.get(node),
             "frontier": frontier_snapshot[:50],  # cap for payload size
         })
 
@@ -162,6 +163,7 @@ def dfs(
         expanded += 1
         explored_list.append({
             "node": node,
+            "parent": parent.get(node),
             "frontier": stack[-50:],
         })
 
@@ -200,7 +202,7 @@ def ucs(
             continue
         visited.add(node)
         expanded += 1
-        explored_list.append({"node": node, "frontier": [n for _, n in pq[:50]]})
+        explored_list.append({"node": node, "parent": parent.get(node), "frontier": [n for _, n in pq[:50]]})
 
         if node == goal:
             path = _reconstruct(parent, goal)
@@ -254,7 +256,7 @@ def astar(
             continue
         visited.add(node)
         expanded += 1
-        explored_list.append({"node": node, "frontier": [n for _, _, n in pq[:50]]})
+        explored_list.append({"node": node, "parent": parent.get(node), "frontier": [n for _, _, n in pq[:50]]})
 
         if node == goal:
             path = _reconstruct(parent, goal)
@@ -312,7 +314,7 @@ def gbfs(
             continue
         visited.add(node)
         expanded += 1
-        explored_list.append({"node": node, "frontier": [n for _, _, n in pq[:50]]})
+        explored_list.append({"node": node, "parent": parent.get(node), "frontier": [n for _, _, n in pq[:50]]})
 
         if node == goal:
             path = _reconstruct(parent, goal)
@@ -370,7 +372,12 @@ def bidirectional(
         if queue_fwd:
             node = queue_fwd.popleft()
             expanded += 1
-            explored_list.append({"node": node, "frontier": list(queue_fwd)[:30], "direction": "forward"})
+            explored_list.append({
+                "node": node,
+                "parent": parent_fwd.get(node),
+                "frontier": list(queue_fwd)[:30],
+                "direction": "forward",
+            })
 
             if node in visited_bwd:
                 meeting_node = node
@@ -392,7 +399,12 @@ def bidirectional(
         if queue_bwd:
             node = queue_bwd.popleft()
             expanded += 1
-            explored_list.append({"node": node, "frontier": list(queue_bwd)[:30], "direction": "backward"})
+            explored_list.append({
+                "node": node,
+                "parent": parent_bwd.get(node),
+                "frontier": list(queue_bwd)[:30],
+                "direction": "backward",
+            })
 
             if node in visited_fwd:
                 meeting_node = node

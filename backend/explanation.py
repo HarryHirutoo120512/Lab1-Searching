@@ -338,115 +338,139 @@ def _calculate_bearing(lat1, lon1, lat2, lon2):
     return (math.degrees(initial_bearing) + 360) % 360
 
 
-def generate_turn_by_turn_directions(graph: Graph, edge_details: list, destinations_info: list = None) -> list:
+def generate_turn_by_turn_directions(
+    graph: Graph,
+    edge_details: list,
+    destinations_info: list = None,
+    start_info: dict = None,
+) -> list:
     """
     Generate step-by-step turn-by-turn navigation instructions (like Google Maps).
+    Supports both single-location routes and multi-leg (multilocation) routes.
     """
     if not edge_details:
         return []
 
-    # Group consecutive edges with the same street_name
-    grouped = []
-    curr_group = None
+    # Check if edge_details is a list of legs (multi-location) or a single leg
+    if isinstance(edge_details[0], list):
+        legs = edge_details
+    else:
+        legs = [edge_details]
 
-    for edge in edge_details:
-        street = edge.get("street_name") or edge.get("road_type") or "đường không tên"
-        dist = edge.get("distance", 0)
-        u_node = graph.get_node(edge.get("start_node", 0))
-        v_node = graph.get_node(edge.get("end_node", 0))
+    all_steps = []
 
-        if curr_group and curr_group["street"] == street:
-            curr_group["distance"] += dist
-            curr_group["edges"].append(edge)
-            if v_node:
-                curr_group["end_coord"] = (v_node["lat"], v_node["lon"])
-        else:
-            if curr_group:
-                grouped.append(curr_group)
-            curr_group = {
-                "street": street,
-                "distance": dist,
-                "edges": [edge],
-                "start_coord": (u_node["lat"], u_node["lon"]) if u_node else (0, 0),
-                "end_coord": (v_node["lat"], v_node["lon"]) if v_node else (0, 0),
-            }
-    if curr_group:
-        grouped.append(curr_group)
-
-    steps = []
-    if not grouped:
-        return []
-
-    first_street = grouped[0]["street"]
-    first_dist = round(grouped[0]["distance"])
-    steps.append({
-        "icon": "straight",
-        "text": f"Đi thẳng trên {first_street} ({_format_distance(first_dist)})",
-        "distance": first_dist,
-        "street": first_street,
-    })
-
-    dest_idx = 0
-
-    for i in range(1, len(grouped)):
-        g_curr = grouped[i]
-        g_prev = grouped[i - 1]
-        street = g_curr["street"]
-        dist = round(g_curr["distance"])
-
-        b_prev = _calculate_bearing(
-            g_prev["start_coord"][0], g_prev["start_coord"][1],
-            g_prev["end_coord"][0], g_prev["end_coord"][1]
-        )
-        b_curr = _calculate_bearing(
-            g_curr["start_coord"][0], g_curr["start_coord"][1],
-            g_curr["end_coord"][0], g_curr["end_coord"][1]
-        )
-
-        angle = (b_curr - b_prev + 540) % 360 - 180
-
-        if angle > 35 and angle <= 135:
-            icon = "turn-right"
-            action = f"Rẽ phải vào {street}"
-        elif angle > 135:
-            icon = "u-turn"
-            action = f"Quay đầu vào {street}"
-        elif angle < -35 and angle >= -135:
-            icon = "turn-left"
-            action = f"Rẽ trái vào {street}"
-        elif angle < -135:
-            icon = "u-turn"
-            action = f"Quay đầu vào {street}"
-        else:
-            icon = "straight"
-            action = f"Đi thẳng tiếp trên {street}"
-
-        steps.append({
-            "icon": icon,
-            "text": f"{action} ({_format_distance(dist)})" if dist > 0 else action,
-            "distance": dist,
-            "street": street,
-        })
-
-        if destinations_info and dest_idx < len(destinations_info):
-            last_edge_v = g_curr["edges"][-1].get("end_node")
-            target_poi = destinations_info[dest_idx]
-            if last_edge_v == target_poi.get("snap_id") or last_edge_v == target_poi.get("id"):
-                steps.append({
-                    "icon": "arrive",
-                    "text": f"📍 Bạn đã tới địa điểm: {target_poi.get('name', 'Điểm đến')}",
-                    "distance": 0,
-                    "poi": target_poi.get("name"),
-                })
-                dest_idx += 1
-
-    if destinations_info and dest_idx < len(destinations_info):
-        final_poi = destinations_info[-1]
-        steps.append({
-            "icon": "arrive",
-            "text": f"🏁 Bạn đã tới đích: {final_poi.get('name', 'Điểm đến')}",
+    # Prepend starting point instance if provided
+    if start_info and start_info.get("name"):
+        all_steps.append({
+            "icon": "start",
+            "text": f"🚩 Bắt đầu từ: {start_info.get('name')}",
             "distance": 0,
-            "poi": final_poi.get("name"),
+            "poi": start_info.get("name"),
         })
 
-    return steps
+    num_legs = len(legs)
+
+    for leg_idx, leg_edges in enumerate(legs):
+        if not leg_edges:
+            continue
+
+        # Group consecutive edges with the same street_name for this leg
+        grouped = []
+        curr_group = None
+
+        for edge in leg_edges:
+            street = edge.get("street_name") or edge.get("road_type") or "đường không tên"
+            dist = edge.get("distance", 0)
+            u_node = graph.get_node(edge.get("start_node", 0))
+            v_node = graph.get_node(edge.get("end_node", 0))
+
+            if curr_group and curr_group["street"] == street:
+                curr_group["distance"] += dist
+                curr_group["edges"].append(edge)
+                if v_node:
+                    curr_group["end_coord"] = (v_node["lat"], v_node["lon"])
+            else:
+                if curr_group:
+                    grouped.append(curr_group)
+                curr_group = {
+                    "street": street,
+                    "distance": dist,
+                    "edges": [edge],
+                    "start_coord": (u_node["lat"], u_node["lon"]) if u_node else (0, 0),
+                    "end_coord": (v_node["lat"], v_node["lon"]) if v_node else (0, 0),
+                }
+        if curr_group:
+            grouped.append(curr_group)
+
+        if not grouped:
+            continue
+
+        first_street = grouped[0]["street"]
+        first_dist = round(grouped[0]["distance"])
+        all_steps.append({
+            "icon": "straight",
+            "text": f"Đi thẳng trên {first_street} ({_format_distance(first_dist)})" if first_dist > 0 else f"Đi thẳng trên {first_street}",
+            "distance": first_dist,
+            "street": first_street,
+        })
+
+        for i in range(1, len(grouped)):
+            g_curr = grouped[i]
+            g_prev = grouped[i - 1]
+            street = g_curr["street"]
+            dist = round(g_curr["distance"])
+
+            b_prev = _calculate_bearing(
+                g_prev["start_coord"][0], g_prev["start_coord"][1],
+                g_prev["end_coord"][0], g_prev["end_coord"][1]
+            )
+            b_curr = _calculate_bearing(
+                g_curr["start_coord"][0], g_curr["start_coord"][1],
+                g_curr["end_coord"][0], g_curr["end_coord"][1]
+            )
+
+            angle = (b_curr - b_prev + 540) % 360 - 180
+
+            if angle > 35 and angle <= 135:
+                icon = "turn-right"
+                action = f"Rẽ phải vào {street}"
+            elif angle > 135:
+                icon = "u-turn"
+                action = f"Quay đầu vào {street}"
+            elif angle < -35 and angle >= -135:
+                icon = "turn-left"
+                action = f"Rẽ trái vào {street}"
+            elif angle < -135:
+                icon = "u-turn"
+                action = f"Quay đầu vào {street}"
+            else:
+                icon = "straight"
+                action = f"Đi thẳng tiếp trên {street}"
+
+            all_steps.append({
+                "icon": icon,
+                "text": f"{action} ({_format_distance(dist)})" if dist > 0 else action,
+                "distance": dist,
+                "street": street,
+            })
+
+        # Arrival notification at the end of this leg
+        if destinations_info and leg_idx < len(destinations_info):
+            target_poi = destinations_info[leg_idx]
+            poi_name = target_poi.get("name", "Điểm đến")
+            if num_legs > 1 and leg_idx < num_legs - 1:
+                all_steps.append({
+                    "icon": "arrive",
+                    "text": f"📍 Bạn đã tới điểm dừng {leg_idx + 1}: {poi_name}",
+                    "distance": 0,
+                    "poi": poi_name,
+                })
+            else:
+                all_steps.append({
+                    "icon": "arrive",
+                    "text": f"🏁 Bạn đã tới đích: {poi_name}",
+                    "distance": 0,
+                    "poi": poi_name,
+                })
+
+    return all_steps

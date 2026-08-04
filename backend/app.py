@@ -164,15 +164,20 @@ def search(request: dict):
         # Format path coordinates for frontend rendering
         result["shortest_result"]["path_coords"] = _path_to_coords(result["shortest_result"]["path"])
         result["fastest_result"]["path_coords"] = _path_to_coords(result["fastest_result"]["path"])
+        result["legs_shortest"] = [result["shortest_result"]]
+        result["legs_fastest"] = [result["fastest_result"]]
 
         # Generate turn-by-turn directions
         dest_node = graph.get_node(goal)
         dest_info = [{"id": goal, "snap_id": goal, "name": dest_node.get("name", "Điểm đến")}] if dest_node else []
+        start_node_obj = graph.get_node(start_node_raw) or graph.get_node(start_node)
+        start_info = {"id": start_node, "name": start_node_obj.get("name", "Điểm xuất phát")} if start_node_obj else None
+
         result["shortest_result"]["directions"] = generate_turn_by_turn_directions(
-            graph, result["shortest_result"].get("edge_details", []), dest_info
+            graph, result["shortest_result"].get("edge_details", []), dest_info, start_info
         )
         result["fastest_result"]["directions"] = generate_turn_by_turn_directions(
-            graph, result["fastest_result"].get("edge_details", []), dest_info
+            graph, result["fastest_result"].get("edge_details", []), dest_info, start_info
         )
 
         return result
@@ -320,8 +325,14 @@ def _multi_location_search(algorithm: str, start: int, destinations: List[int]) 
         total_stats_s, total_stats_f, legs_shortest, legs_fastest, visiting_order_names, algo_info
     )
 
-    directions_s = generate_turn_by_turn_directions(graph, combined_edge_details_s, dest_infos)
-    directions_f = generate_turn_by_turn_directions(graph, combined_edge_details_f, dest_infos)
+    legs_edge_details_s = [leg.get("edge_details", []) for leg in legs_shortest]
+    legs_edge_details_f = [leg.get("edge_details", []) for leg in legs_fastest]
+
+    start_node_obj = graph.get_node(start)
+    start_info = {"id": start, "name": start_node_obj.get("name", "Điểm xuất phát")} if start_node_obj else None
+
+    directions_s = generate_turn_by_turn_directions(graph, legs_edge_details_s, dest_infos, start_info)
+    directions_f = generate_turn_by_turn_directions(graph, legs_edge_details_f, dest_infos, start_info)
 
     return {
         "visiting_order": visiting_order,

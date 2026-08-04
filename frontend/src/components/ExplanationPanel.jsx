@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 const ICON_MAP = {
+  'start': '🚩',
   'straight': '⬆️',
   'turn-right': '↗️',
   'turn-left': '↖️',
@@ -94,7 +95,13 @@ export default function ExplanationPanel({
             {activeDirections && activeDirections.map((step, idx) => (
               <div
                 key={idx}
-                className={`directions-item ${step.icon === 'arrive' ? 'directions-item--arrive' : ''}`}
+                className={`directions-item ${
+                  step.icon === 'start'
+                    ? 'directions-item--start'
+                    : step.icon === 'arrive'
+                    ? 'directions-item--arrive'
+                    : ''
+                }`}
               >
                 <span className="directions-item__icon">
                   {ICON_MAP[step.icon] || '➡️'}

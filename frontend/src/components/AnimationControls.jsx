@@ -1,17 +1,41 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 
 export default function AnimationControls({
-  exploredSteps,
-  onExploredNodesUpdate,
+  legs,
+  onAnimUpdate,
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [speed, setSpeed] = useState(1);
   const currentIndex = useRef(0);
   const timerRef = useRef(null);
-  const exploredRef = useRef([]);
 
-  const totalSteps = exploredSteps?.length || 0;
+  // Flatten all explored steps across legs and compute leg boundaries
+  const { flatSteps, legBoundaries, totalSteps } = useMemo(() => {
+    if (!legs || legs.length === 0) {
+      return { flatSteps: [], legBoundaries: [], totalSteps: 0 };
+    }
+    const flat = [];
+    const boundaries = [];
+
+    legs.forEach((leg, legIdx) => {
+      const steps = leg.explored || [];
+      steps.forEach((step) => {
+        flat.push({
+          node: step.node,
+          parent: step.parent,
+          legIndex: legIdx,
+        });
+      });
+      boundaries.push(flat.length);
+    });
+
+    return {
+      flatSteps: flat,
+      legBoundaries: boundaries,
+      totalSteps: flat.length,
+    };
+  }, [legs]);
 
   useEffect(() => {
     return () => {
@@ -20,36 +44,94 @@ export default function AnimationControls({
   }, []);
 
   useEffect(() => {
-    // Reset when new data arrives
+    // Reset state when new search results arrive
     currentIndex.current = 0;
-    exploredRef.current = [];
     setProgress(0);
     setIsPlaying(false);
     if (timerRef.current) clearTimeout(timerRef.current);
-  }, [exploredSteps]);
+    if (onAnimUpdate) {
+      onAnimUpdate({
+        completedLegsCoords: null, // null means show default full route when not animating
+        activeExploredEdges: [],
+        activeExploredNodes: [],
+        isAnimating: false,
+      });
+    }
+  }, [legs]);
+
+  const emitStep = (idx) => {
+    if (!legs || legs.length === 0) return;
+
+    if (idx === 0) {
+      onAnimUpdate({
+        completedLegsCoords: [],
+        activeExploredEdges: [],
+        activeExploredNodes: [],
+        isAnimating: true,
+      });
+      return;
+    }
+
+    // Determine current leg index for step idx
+    let currentLegIdx = 0;
+    for (let i = 0; i < legBoundaries.length; i++) {
+      if (idx > (i === 0 ? 0 : legBoundaries[i - 1])) {
+        currentLegIdx = i;
+      }
+    }
+
+    // A leg is considered completed if the animation index has reached or passed its boundary
+    const completedLegsCount = legBoundaries.filter((b) => idx >= b).length;
+    const completedLegsCoords = legs
+      .slice(0, completedLegsCount)
+      .map((l) => l.path_coords)
+      .filter(Boolean);
+
+    // Only show the CURRENT leg's explored search tree (clear previous legs' gray edges)
+    const legStartIdx = currentLegIdx === 0 ? 0 : legBoundaries[currentLegIdx - 1];
+    const activeSteps = flatSteps.slice(legStartIdx, idx);
+
+    const activeExploredEdges = activeSteps
+      .filter((s) => s.parent !== null && s.parent !== undefined)
+      .map((s) => ({ parent: s.parent, node: s.node }));
+
+    const activeExploredNodes = activeSteps.map((s) => s.node);
+
+    onAnimUpdate({
+      completedLegsCoords,
+      activeExploredEdges,
+      activeExploredNodes,
+      isAnimating: true,
+    });
+  };
 
   const tick = () => {
     if (currentIndex.current >= totalSteps) {
       setIsPlaying(false);
+      emitStep(totalSteps);
       return;
     }
 
-    const step = exploredSteps[currentIndex.current];
-    exploredRef.current.push(step.node);
     currentIndex.current++;
     setProgress(currentIndex.current / totalSteps);
-    onExploredNodesUpdate([...exploredRef.current]);
+    emitStep(currentIndex.current);
 
-    const interval = Math.max(5, 30 / speed);
+    // Check if we hit a leg boundary for intermediate pausing
+    const isAtLegBoundary = legBoundaries.includes(currentIndex.current);
+    if (isAtLegBoundary && currentIndex.current < totalSteps) {
+      // Pause animation at end of current leg so user must click Play to continue to next leg
+      setIsPlaying(false);
+      return;
+    }
+
+    const interval = Math.max(4, 30 / speed);
     timerRef.current = setTimeout(tick, interval);
   };
 
   const handlePlay = () => {
     if (currentIndex.current >= totalSteps) {
-      // Reset and replay
       currentIndex.current = 0;
-      exploredRef.current = [];
-      onExploredNodesUpdate([]);
+      setProgress(0);
     }
     setIsPlaying(true);
     tick();
@@ -63,9 +145,15 @@ export default function AnimationControls({
   const handleReset = () => {
     handlePause();
     currentIndex.current = 0;
-    exploredRef.current = [];
     setProgress(0);
-    onExploredNodesUpdate([]);
+    if (onAnimUpdate) {
+      onAnimUpdate({
+        completedLegsCoords: null, // null = show default full route
+        activeExploredEdges: [],
+        activeExploredNodes: [],
+        isAnimating: false,
+      });
+    }
   };
 
   const cycleSpeed = () => {
@@ -74,7 +162,7 @@ export default function AnimationControls({
     setSpeed(speeds[(idx + 1) % speeds.length]);
   };
 
-  if (!exploredSteps || totalSteps === 0) return null;
+  if (!legs || totalSteps === 0) return null;
 
   return (
     <div className="animation-controls">

@@ -16,7 +16,7 @@ export default function App() {
   const [searchResult, setSearchResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState({ text: 'Loading map data…', type: 'info' });
-  const [exploredNodes, setExploredNodes] = useState([]);
+  const [animState, setAnimState] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
 
   // ── Load initial data ───────────────────────────────────────────────
@@ -40,6 +40,12 @@ export default function App() {
     loadData();
   }, []);
 
+  // Reset search results whenever startNode or destinations change
+  useEffect(() => {
+    setSearchResult(null);
+    setAnimState(null);
+  }, [startNode, destinations]);
+
   // ── Handlers ────────────────────────────────────────────────────────
   const handleSearch = useCallback(async () => {
     const validDests = destinations.filter((d) => d !== null);
@@ -47,7 +53,7 @@ export default function App() {
 
     setIsLoading(true);
     setSearchResult(null);
-    setExploredNodes([]);
+    setAnimState(null);
     setStatus({ text: 'Searching routes…', type: 'info' });
 
     try {
@@ -70,42 +76,14 @@ export default function App() {
 
   const handleReset = useCallback(() => {
     setSearchResult(null);
-    setExploredNodes([]);
+    setAnimState(null);
     setStartNode(null);
     setDestinations([null]);
     setStatus({ text: 'Ready', type: 'info' });
   }, []);
 
-  const handleMapClick = useCallback(
-    ({ lat, lon }) => {
-      // Find nearest POI to click
-      if (pois.length === 0) return;
-      let nearest = pois[0];
-      let bestDist = Infinity;
-      for (const p of pois) {
-        const d = Math.sqrt((p.lat - lat) ** 2 + (p.lon - lon) ** 2);
-        if (d < bestDist) {
-          bestDist = d;
-          nearest = p;
-        }
-      }
-      // Auto-fill the first empty field
-      if (startNode === null) {
-        setStartNode(nearest.id);
-      } else {
-        const emptyIdx = destinations.findIndex((d) => d === null);
-        if (emptyIdx >= 0) {
-          const updated = [...destinations];
-          updated[emptyIdx] = nearest.id;
-          setDestinations(updated);
-        }
-      }
-    },
-    [pois, startNode, destinations]
-  );
-
-  // Get explored steps for animation (use shortest result)
-  const exploredSteps = searchResult?.shortest_result?.explored || [];
+  // Legs array for animation (using shortest route legs)
+  const legs = searchResult?.legs_shortest || [];
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
@@ -163,16 +141,15 @@ export default function App() {
         startNode={startNode}
         destinations={destinations}
         pois={pois}
-        onMapClick={handleMapClick}
-        exploredNodes={exploredNodes}
+        animState={animState}
         showDebug={showDebug}
       />
 
       {/* Animation controls (floating on map) */}
       {searchResult && (
         <AnimationControls
-          exploredSteps={exploredSteps}
-          onExploredNodesUpdate={setExploredNodes}
+          legs={legs}
+          onAnimUpdate={setAnimState}
         />
       )}
     </div>
