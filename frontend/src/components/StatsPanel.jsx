@@ -1,4 +1,4 @@
-export default function StatsPanel({ shortestStats, fastestStats }) {
+export default function StatsPanel({ shortestStats, fastestStats, routeMode = 'shortest', setRouteMode }) {
   if (!shortestStats || !fastestStats) return null;
 
   const formatDist = (m) =>
@@ -79,8 +79,22 @@ export default function StatsPanel({ shortestStats, fastestStats }) {
         <thead>
           <tr>
             <th>Metric</th>
-            <th className="stats-col--shortest">🔵 Shortest</th>
-            <th className="stats-col--fastest">🟠 Fastest</th>
+            <th
+              className={`stats-col--shortest ${routeMode === 'shortest' ? 'stats-col--active' : ''}`}
+              style={{ cursor: 'pointer', background: routeMode === 'shortest' ? 'rgba(74, 144, 217, 0.15)' : 'transparent', borderRadius: '4px' }}
+              onClick={() => setRouteMode && setRouteMode('shortest')}
+              title="Click to select Shortest route"
+            >
+              🔵 Shortest {routeMode === 'shortest' ? '✓' : ''}
+            </th>
+            <th
+              className={`stats-col--fastest ${routeMode === 'fastest' ? 'stats-col--active' : ''}`}
+              style={{ cursor: 'pointer', background: routeMode === 'fastest' ? 'rgba(255, 107, 107, 0.15)' : 'transparent', borderRadius: '4px' }}
+              onClick={() => setRouteMode && setRouteMode('fastest')}
+              title="Click to select Fastest route"
+            >
+              🔴 Fastest {routeMode === 'fastest' ? '✓' : ''}
+            </th>
           </tr>
         </thead>
         <tbody>

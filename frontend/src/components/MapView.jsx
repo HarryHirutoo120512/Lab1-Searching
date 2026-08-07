@@ -82,6 +82,7 @@ function createArrowImageData(color) {
 export default function MapView({
   network,
   searchResult,
+  routeMode = 'shortest',
   startNode,
   destinations,
   pois,
@@ -134,15 +135,81 @@ export default function MapView({
     map.current.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
     map.current.on('load', () => {
-      if (!map.current.hasImage('arrow-blue')) {
-        map.current.addImage('arrow-blue', createArrowImageData('#4a90d9'));
-      }
-      if (!map.current.hasImage('arrow-red')) {
-        map.current.addImage('arrow-red', createArrowImageData('#ff6b6b'));
-      }
-      if (!map.current.hasImage('arrow-gray')) {
-        map.current.addImage('arrow-gray', createArrowImageData('#555555'));
-      }
+      const m = map.current;
+      if (!m.hasImage('arrow-blue')) m.addImage('arrow-blue', createArrowImageData('#4a90d9'));
+      if (!m.hasImage('arrow-red')) m.addImage('arrow-red', createArrowImageData('#ff6b6b'));
+      if (!m.hasImage('arrow-gray')) m.addImage('arrow-gray', createArrowImageData('#555555'));
+
+      // Find actual text label layer from the basemap, or append to top if not found
+      const baseLabelLayer = m.getStyle().layers.find(
+        (l) => l.type === 'symbol' && l.layout && l.layout['text-field']
+      );
+      const beforeId = baseLabelLayer?.id;
+
+      const emptyLine = { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } };
+      const emptyFC = { type: 'FeatureCollection', features: [] };
+
+      // ── Pre-create: explored-edges (gray search tree) ──
+      m.addSource('explored-edges', { type: 'geojson', data: emptyFC });
+      m.addLayer({
+        id: 'explored-edges-layer', type: 'line', source: 'explored-edges',
+        paint: { 'line-color': '#777777', 'line-width': 3, 'line-opacity': 0.75 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+
+      // ── Pre-create: explored-points (colored circles) ──
+      m.addSource('explored-points', { type: 'geojson', data: emptyFC });
+      m.addLayer({
+        id: 'explored-points-layer', type: 'circle', source: 'explored-points',
+        paint: {
+          'circle-radius': 4,
+          'circle-color': ['interpolate', ['linear'], ['get', 'order'], 0, '#51cf66', 50, '#fcc419', 100, '#ff6b6b'],
+          'circle-opacity': 0.8,
+        },
+      });
+
+      // ── Pre-create: snap-poi-lines (dashed magenta) ──
+      m.addSource('snap-poi-lines', { type: 'geojson', data: emptyFC });
+      m.addLayer({
+        id: 'snap-poi-lines-layer', type: 'line', source: 'snap-poi-lines',
+        paint: { 'line-color': '#e040fb', 'line-width': 3, 'line-dasharray': [3, 3], 'line-opacity': 0.9 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+
+      // ── Pre-create: fastest-route (red line + arrows) ──
+      m.addSource('fastest-route', { type: 'geojson', data: emptyLine });
+      m.addLayer({
+        id: 'fastest-route-layer', type: 'line', source: 'fastest-route',
+        paint: { 'line-color': '#ff3333', 'line-width': 6, 'line-opacity': 0.9 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+      m.addLayer({
+        id: 'fastest-route-arrows', type: 'symbol', source: 'fastest-route',
+        layout: {
+          'symbol-placement': 'line', 'symbol-spacing': 60,
+          'icon-image': 'arrow-red', 'icon-size': 0.65,
+          'icon-allow-overlap': true, 'icon-ignore-placement': true,
+          'icon-keep-upright': false, 'icon-rotation-alignment': 'line',
+        },
+      });
+
+      // ── Pre-create: shortest-route (blue line + arrows — topmost route) ──
+      m.addSource('shortest-route', { type: 'geojson', data: emptyLine });
+      m.addLayer({
+        id: 'shortest-route-layer', type: 'line', source: 'shortest-route',
+        paint: { 'line-color': '#2563eb', 'line-width': 6, 'line-opacity': 0.95 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+      m.addLayer({
+        id: 'shortest-route-arrows', type: 'symbol', source: 'shortest-route',
+        layout: {
+          'symbol-placement': 'line', 'symbol-spacing': 60,
+          'icon-image': 'arrow-blue', 'icon-size': 0.65,
+          'icon-allow-overlap': true, 'icon-ignore-placement': true,
+          'icon-keep-upright': false, 'icon-rotation-alignment': 'line',
+        },
+      });
+
       setMapReady(true);
     });
 
@@ -418,13 +485,10 @@ export default function MapView({
     }
   }, [mapReady, network, showDebug]);
 
-  // ── 1. Persistent POI-to-snap dashed lines effect (no flicker) ───────
+  // ── 1. Update POI-to-snap dashed lines (source pre-created on load) ──
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const m = map.current;
-
-    const sourceId = 'snap-poi-lines';
-    const layerId = 'snap-poi-lines-layer';
 
     const activePoiIds = [startNode, ...(destinations || [])].filter((id) => id !== null);
     const snapLineFeatures = [];
@@ -438,10 +502,7 @@ export default function MapView({
             type: 'Feature',
             geometry: {
               type: 'LineString',
-              coordinates: [
-                [p.lon, p.lat],
-                [p.snap_lon, p.snap_lat],
-              ],
+              coordinates: [[p.lon, p.lat], [p.snap_lon, p.snap_lat]],
             },
             properties: { name: p.name },
           });
@@ -449,175 +510,73 @@ export default function MapView({
       }
     });
 
-    const geojson = {
-      type: 'FeatureCollection',
-      features: snapLineFeatures,
-    };
-
-    if (m.getSource(sourceId)) {
-      m.getSource(sourceId).setData(geojson);
-    } else if (snapLineFeatures.length > 0) {
-      m.addSource(sourceId, { type: 'geojson', data: geojson });
-      m.addLayer({
-        id: layerId,
-        type: 'line',
-        source: sourceId,
-        paint: {
-          'line-color': '#e040fb',
-          'line-width': 2.5,
-          'line-dasharray': [3, 3],
-          'line-opacity': 0.9,
-        },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-      });
-    }
+    m.getSource('snap-poi-lines')?.setData({ type: 'FeatureCollection', features: snapLineFeatures });
   }, [mapReady, startNode, destinations, pois]);
 
-  // ── 2. Persistent Shortest & Fastest Route lines effect ─────────────
+  // ── 2. Update Shortest & Fastest Route data based on routeMode ──
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const m = map.current;
 
+    const emptyLine = { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } };
+
     if (!searchResult) {
-      ['shortest-route', 'fastest-route'].forEach((id) => {
-        if (m.getLayer(`${id}-arrows`)) m.removeLayer(`${id}-arrows`);
-        if (m.getLayer(`${id}-layer`)) m.removeLayer(`${id}-layer`);
-        if (m.getSource(id)) m.removeSource(id);
-      });
+      m.getSource('shortest-route')?.setData(emptyLine);
+      m.getSource('fastest-route')?.setData(emptyLine);
       return;
     }
 
-    // Determine active route coordinates for Shortest route
-    let activeShortestCoords = [];
-    if (animState && animState.completedLegsCoords !== null) {
+    const isShortestMode = routeMode === 'shortest';
+
+    // Get path coordinates for active route or during step-by-step animation
+    let activeCoords = [];
+    if (animState && animState.isAnimating && animState.completedLegsCoords !== null) {
       animState.completedLegsCoords.forEach((legCoords) => {
         if (!legCoords || legCoords.length === 0) return;
-        if (activeShortestCoords.length === 0) {
-          activeShortestCoords.push(...legCoords);
+        if (activeCoords.length === 0) {
+          activeCoords.push(...legCoords);
         } else {
-          activeShortestCoords.push(...legCoords.slice(1));
+          activeCoords.push(...legCoords.slice(1));
         }
       });
     } else {
-      activeShortestCoords = searchResult.shortest_result?.path_coords || [];
+      activeCoords = isShortestMode
+        ? searchResult.shortest_result?.path_coords || []
+        : searchResult.fastest_result?.path_coords || [];
     }
 
-    const fastestCoords = searchResult.fastest_result?.path_coords || [];
-
-    // ── Shortest Route Layer ──
-    const shortestGeojson = {
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: activeShortestCoords.length >= 2 ? activeShortestCoords : [],
-      },
-    };
-
-    if (m.getSource('shortest-route')) {
-      m.getSource('shortest-route').setData(shortestGeojson);
-    } else if (activeShortestCoords.length >= 2) {
-      m.addSource('shortest-route', { type: 'geojson', data: shortestGeojson });
-      m.addLayer({
-        id: 'shortest-route-layer',
-        type: 'line',
-        source: 'shortest-route',
-        paint: {
-          'line-color': '#4a90d9',
-          'line-width': 5,
-          'line-opacity': 0.9,
-        },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
+    if (isShortestMode) {
+      // Draw Shortest route (blue), clear Fastest route
+      m.getSource('shortest-route')?.setData({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: activeCoords.length >= 2 ? activeCoords : [] },
       });
-      m.addLayer({
-        id: 'shortest-route-arrows',
-        type: 'symbol',
-        source: 'shortest-route',
-        layout: {
-          'symbol-placement': 'line',
-          'symbol-spacing': 60,
-          'icon-image': 'arrow-blue',
-          'icon-size': 0.65,
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-          'icon-keep-upright': false,
-          'icon-rotation-alignment': 'line',
-        },
+      m.getSource('fastest-route')?.setData(emptyLine);
+    } else {
+      // Draw Fastest route (red), clear Shortest route
+      m.getSource('fastest-route')?.setData({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: activeCoords.length >= 2 ? activeCoords : [] },
       });
+      m.getSource('shortest-route')?.setData(emptyLine);
     }
 
-    // ── Fastest Route Layer ──
-    const showFastest = fastestCoords.length >= 2 && (!animState || !animState.isAnimating);
-    const fastestGeojson = {
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: showFastest ? fastestCoords : [],
-      },
-    };
-
-    if (m.getSource('fastest-route')) {
-      m.getSource('fastest-route').setData(fastestGeojson);
-    } else if (showFastest) {
-      m.addSource('fastest-route', { type: 'geojson', data: fastestGeojson });
-      m.addLayer({
-        id: 'fastest-route-layer',
-        type: 'line',
-        source: 'fastest-route',
-        paint: {
-          'line-color': '#ff6b6b',
-          'line-width': 5,
-          'line-opacity': 0.8,
-        },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-      });
-      m.addLayer({
-        id: 'fastest-route-arrows',
-        type: 'symbol',
-        source: 'fastest-route',
-        layout: {
-          'symbol-placement': 'line',
-          'symbol-spacing': 60,
-          'icon-image': 'arrow-red',
-          'icon-size': 0.65,
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-          'icon-keep-upright': false,
-          'icon-rotation-alignment': 'line',
-        },
-      });
-    }
-
-    // Fit map bounds on initial search result arrival
+    // Fit map bounds on initial search result arrival or route mode switch
     if (!animState || !animState.isAnimating) {
-      const allCoords = [...(searchResult.shortest_result?.path_coords || []), ...fastestCoords];
-      if (allCoords.length > 0) {
-        const bounds = allCoords.reduce(
+      if (activeCoords.length > 0) {
+        const bounds = activeCoords.reduce(
           (b, c) => b.extend(c),
-          new maplibregl.LngLatBounds(allCoords[0], allCoords[0])
+          new maplibregl.LngLatBounds(activeCoords[0], activeCoords[0])
         );
-        m.fitBounds(bounds, { padding: 60, duration: 1000 });
+        m.fitBounds(bounds, { padding: 60, duration: 800 });
       }
     }
-  }, [mapReady, searchResult, animState?.completedLegsCoords, animState?.isAnimating]);
+  }, [mapReady, searchResult, routeMode, animState?.completedLegsCoords, animState?.isAnimating]);
 
-  // ── 3. Draw search process animation (Gray Edges + Nodes) ───────────
+  // ── 3. Update explored edges + nodes data (sources pre-created on load) ──
   useEffect(() => {
     if (!mapReady || !map.current) return;
     const m = map.current;
-
-    const edgeSourceId = 'explored-edges';
-    const edgeLayerId = 'explored-edges-layer';
-    const pointSourceId = 'explored-points';
-    const pointLayerId = 'explored-points-layer';
 
     const activeEdges = animState?.activeExploredEdges || [];
     const activeNodes = animState?.activeExploredNodes || [];
@@ -633,84 +592,22 @@ export default function MapView({
           if (uPt && vPt) coords = [uPt, vPt];
         }
         if (!coords) return null;
-        return {
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: coords,
-          },
-        };
+        return { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } };
       })
       .filter(Boolean);
 
-    const edgeGeojson = {
-      type: 'FeatureCollection',
-      features: edgeFeatures,
-    };
-
-    if (m.getSource(edgeSourceId)) {
-      m.getSource(edgeSourceId).setData(edgeGeojson);
-    } else if (edgeFeatures.length > 0) {
-      m.addSource(edgeSourceId, { type: 'geojson', data: edgeGeojson });
-      m.addLayer({
-        id: edgeLayerId,
-        type: 'line',
-        source: edgeSourceId,
-        paint: {
-          'line-color': '#777777', // Gray search tree edge
-          'line-width': 2.5,
-          'line-opacity': 0.75,
-        },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-      });
-    }
+    m.getSource('explored-edges')?.setData({ type: 'FeatureCollection', features: edgeFeatures });
 
     // ── Explored Nodes (Circles) ──
     const nodeFeatures = activeNodes
       .map((nodeId, i) => {
         const coords = nodeCoordsMap.get(nodeId);
         if (!coords) return null;
-        return {
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: coords,
-          },
-          properties: { order: i },
-        };
+        return { type: 'Feature', geometry: { type: 'Point', coordinates: coords }, properties: { order: i } };
       })
       .filter(Boolean);
 
-    const nodeGeojson = {
-      type: 'FeatureCollection',
-      features: nodeFeatures,
-    };
-
-    if (m.getSource(pointSourceId)) {
-      m.getSource(pointSourceId).setData(nodeGeojson);
-    } else if (nodeFeatures.length > 0) {
-      m.addSource(pointSourceId, { type: 'geojson', data: nodeGeojson });
-      m.addLayer({
-        id: pointLayerId,
-        type: 'circle',
-        source: pointSourceId,
-        paint: {
-          'circle-radius': 3,
-          'circle-color': [
-            'interpolate',
-            ['linear'],
-            ['get', 'order'],
-            0, '#51cf66',
-            Math.max(1, nodeFeatures.length * 0.5), '#fcc419',
-            Math.max(2, nodeFeatures.length), '#ff6b6b',
-          ],
-          'circle-opacity': 0.7,
-        },
-      });
-    }
+    m.getSource('explored-points')?.setData({ type: 'FeatureCollection', features: nodeFeatures });
   }, [mapReady, animState, edgeMap, nodeCoordsMap]);
 
   // ── Collect visible road types for legend ────────────────────────────
@@ -734,13 +631,13 @@ export default function MapView({
       {/* Route legend */}
       {searchResult && !showDebug && (
         <div className="map-legend">
-          <div className="map-legend__item">
+          <div className={`map-legend__item ${routeMode === 'shortest' ? 'map-legend__item--active' : ''}`} style={{ opacity: routeMode === 'shortest' ? 1 : 0.4 }}>
             <span className="map-legend__line map-legend__line--shortest" />
-            <span>Shortest route</span>
+            <span>Shortest route {routeMode === 'shortest' ? '(Active)' : ''}</span>
           </div>
-          <div className="map-legend__item">
+          <div className={`map-legend__item ${routeMode === 'fastest' ? 'map-legend__item--active' : ''}`} style={{ opacity: routeMode === 'fastest' ? 1 : 0.4 }}>
             <span className="map-legend__line map-legend__line--fastest" />
-            <span>Fastest route</span>
+            <span>Fastest route {routeMode === 'fastest' ? '(Active)' : ''}</span>
           </div>
         </div>
       )}

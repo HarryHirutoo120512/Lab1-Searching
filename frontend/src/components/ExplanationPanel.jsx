@@ -14,9 +14,9 @@ export default function ExplanationPanel({
   algorithmInfo,
   shortestDirections,
   fastestDirections,
+  routeMode = 'shortest',
+  setRouteMode,
 }) {
-  const [activeTab, setActiveTab] = useState('shortest');
-
   if (!explanation) return null;
 
   // Convert markdown-like bold (**text**) to <strong>
@@ -29,6 +29,11 @@ export default function ExplanationPanel({
       }
       return part;
     });
+  };
+
+  const activeTab = routeMode;
+  const handleTabChange = (mode) => {
+    if (setRouteMode) setRouteMode(mode);
   };
 
   const activeDirections = activeTab === 'shortest' ? shortestDirections : fastestDirections;
@@ -73,19 +78,19 @@ export default function ExplanationPanel({
       {(shortestDirections?.length > 0 || fastestDirections?.length > 0) && (
         <div className="directions-container">
           <div className="directions-title">
-            🧭 Turn-by-Turn Navigation
+            🧭 Turn-by-Turn Navigation ({activeTab === 'shortest' ? 'Shortest' : 'Fastest'})
           </div>
 
           <div className="directions-tabs">
             <button
               className={`directions-tab directions-tab--shortest ${activeTab === 'shortest' ? 'active' : ''}`}
-              onClick={() => setActiveTab('shortest')}
+              onClick={() => handleTabChange('shortest')}
             >
               🔵 Shortest Route ({shortestDirections?.length || 0} steps)
             </button>
             <button
               className={`directions-tab directions-tab--fastest ${activeTab === 'fastest' ? 'active' : ''}`}
-              onClick={() => setActiveTab('fastest')}
+              onClick={() => handleTabChange('fastest')}
             >
               🔴 Fastest Route ({fastestDirections?.length || 0} steps)
             </button>

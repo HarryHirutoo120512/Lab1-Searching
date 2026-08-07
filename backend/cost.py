@@ -11,8 +11,8 @@ from typing import Dict, Tuple
 
 # ── Weight tuples ──────────────────────────────────────────────────────
 # (w_distance, w_time, w_congestion, w_risk)
-SHORTEST_WEIGHTS = (0.7, 0.1, 0.1, 0.1)
-FASTEST_WEIGHTS  = (0.1, 0.5, 0.3, 0.1)
+SHORTEST_WEIGHTS = (1.0, 0.0, 0.0, 0.0)
+FASTEST_WEIGHTS  = (0.05, 0.65, 0.20, 0.10)
 
 CRITERIA = {
     "shortest": SHORTEST_WEIGHTS,

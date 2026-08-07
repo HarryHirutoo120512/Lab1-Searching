@@ -13,6 +13,8 @@ export default function ControlPanel({
   pois,
   algorithm,
   setAlgorithm,
+  routeMode = 'shortest',
+  setRouteMode,
   startNode,
   setStartNode,
   destinations,
@@ -69,6 +71,19 @@ export default function ControlPanel({
                 {a.label}
               </option>
             ))}
+          </select>
+        </div>
+
+        {/* Route Criterion / Preference selector */}
+        <div className="control-panel__section">
+          <label className="control-panel__label">⚡ Tiêu chí tìm đường (Criteria)</label>
+          <select
+            className="control-panel__select"
+            value={routeMode}
+            onChange={(e) => setRouteMode(e.target.value)}
+          >
+            <option value="shortest">🔵 Shortest (Trọng số Distance = 1.0)</option>
+            <option value="fastest">🔴 Fastest (Trọng số Time & Congestion)</option>
           </select>
         </div>
 

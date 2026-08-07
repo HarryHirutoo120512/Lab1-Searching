@@ -18,6 +18,7 @@ export default function App() {
   const [status, setStatus] = useState({ text: 'Loading map data…', type: 'info' });
   const [animState, setAnimState] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [routeMode, setRouteMode] = useState('shortest'); // default 'shortest'
 
   // ── Load initial data ───────────────────────────────────────────────
   useEffect(() => {
@@ -82,8 +83,11 @@ export default function App() {
     setStatus({ text: 'Ready', type: 'info' });
   }, []);
 
-  // Legs array for animation (using shortest route legs)
-  const legs = searchResult?.legs_shortest || [];
+  // Legs array for animation based on selected route mode
+  const legs =
+    routeMode === 'fastest'
+      ? searchResult?.legs_fastest || []
+      : searchResult?.legs_shortest || [];
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
@@ -94,6 +98,8 @@ export default function App() {
           pois={pois}
           algorithm={algorithm}
           setAlgorithm={setAlgorithm}
+          routeMode={routeMode}
+          setRouteMode={setRouteMode}
           startNode={startNode}
           setStartNode={setStartNode}
           destinations={destinations}
@@ -110,6 +116,8 @@ export default function App() {
           <StatsPanel
             shortestStats={searchResult.shortest_result?.stats}
             fastestStats={searchResult.fastest_result?.stats}
+            routeMode={routeMode}
+            setRouteMode={setRouteMode}
           />
         )}
 
@@ -120,6 +128,8 @@ export default function App() {
             algorithmInfo={searchResult.algorithm_info}
             shortestDirections={searchResult.shortest_result?.directions}
             fastestDirections={searchResult.fastest_result?.directions}
+            routeMode={routeMode}
+            setRouteMode={setRouteMode}
           />
         )}
 
@@ -138,6 +148,7 @@ export default function App() {
       <MapView
         network={network}
         searchResult={searchResult}
+        routeMode={routeMode}
         startNode={startNode}
         destinations={destinations}
         pois={pois}
