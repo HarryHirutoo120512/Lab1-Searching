@@ -24,7 +24,11 @@ export default function ControlPanel({
   isLoading,
   showDebug,
   setShowDebug,
+  searchResult,
 }) {
+  const shortestSteps = searchResult?.shortest_result?.directions?.length;
+  const fastestSteps = searchResult?.fastest_result?.directions?.length;
+
   const handleAddDestination = () => {
     setDestinations([...destinations, null]);
   };
@@ -77,14 +81,22 @@ export default function ControlPanel({
         {/* Route Criterion / Preference selector */}
         <div className="control-panel__section">
           <label className="control-panel__label">⚡ Tiêu chí tìm đường (Criteria)</label>
-          <select
-            className="control-panel__select"
-            value={routeMode}
-            onChange={(e) => setRouteMode(e.target.value)}
-          >
-            <option value="shortest">🔵 Shortest (Trọng số Distance = 1.0)</option>
-            <option value="fastest">🔴 Fastest (Trọng số Time & Congestion)</option>
-          </select>
+          <div className="directions-tabs">
+            <button
+              type="button"
+              className={`directions-tab directions-tab--shortest ${routeMode === 'shortest' ? 'active' : ''}`}
+              onClick={() => setRouteMode && setRouteMode('shortest')}
+            >
+              🔵 Shortest Route{shortestSteps !== undefined ? ` (${shortestSteps} steps)` : ''}
+            </button>
+            <button
+              type="button"
+              className={`directions-tab directions-tab--fastest ${routeMode === 'fastest' ? 'active' : ''}`}
+              onClick={() => setRouteMode && setRouteMode('fastest')}
+            >
+              🔴 Fastest Route{fastestSteps !== undefined ? ` (${fastestSteps} steps)` : ''}
+            </button>
+          </div>
         </div>
 
         {/* Start location */}

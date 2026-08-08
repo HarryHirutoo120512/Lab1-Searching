@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -79,7 +79,49 @@ function createArrowImageData(color) {
   return ctx.getImageData(0, 0, 24, 24);
 }
 
-export default function MapView({
+function getVisualizationBounds(searchResult, routeMode, nodeCoordsMap) {
+  if (!searchResult) return null;
+
+  const isShortestMode = routeMode === 'shortest';
+  const pathCoords = isShortestMode
+    ? searchResult.shortest_result?.path_coords || []
+    : searchResult.fastest_result?.path_coords || [];
+
+  if (!pathCoords || pathCoords.length === 0) return null;
+
+  let minLon = Infinity, maxLon = -Infinity;
+  let minLat = Infinity, maxLat = -Infinity;
+
+  const extend = (lon, lat) => {
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  };
+
+  // 1. Include all path coordinates
+  pathCoords.forEach(([lon, lat]) => extend(lon, lat));
+
+  // 2. Include all explored nodes coordinates across all legs
+  const legs = isShortestMode
+    ? searchResult.legs_shortest || []
+    : searchResult.legs_fastest || [];
+
+  legs.forEach((leg) => {
+    (leg.explored || []).forEach((step) => {
+      if (step.node !== undefined && step.node !== null) {
+        const coords = nodeCoordsMap.get(step.node);
+        if (coords) extend(coords[0], coords[1]);
+      }
+    });
+  });
+
+  if (minLon === Infinity) return null;
+
+  return new maplibregl.LngLatBounds([minLon, minLat], [maxLon, maxLat]);
+}
+
+const MapView = forwardRef(function MapView({
   network,
   searchResult,
   routeMode = 'shortest',
@@ -88,11 +130,145 @@ export default function MapView({
   pois,
   animState,
   showDebug,
-}) {
+}, ref) {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const selectedMarkersRef = useRef({});
   const [mapReady, setMapReady] = useState(false);
+
+  // ── Imperative handle for Screenshot export ──────────────────────────
+  useImperativeHandle(ref, () => ({
+    takeScreenshot: async () => {
+      if (!map.current || !mapContainer.current) return;
+      const m = map.current;
+
+      // 1. Focus map tightly around route and all explored nodes
+      const bounds = getVisualizationBounds(searchResult, routeMode, nodeCoordsMap);
+      if (bounds) {
+        m.fitBounds(bounds, { padding: 50, animate: false });
+      }
+
+      // Force repaint to update canvas buffer immediately
+      m.triggerRepaint();
+
+      // Short pause to ensure WebGL canvas and tile rendering completes
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      const mapCanvas = m.getCanvas();
+      const containerEl = mapContainer.current;
+      const containerRect = containerEl.getBoundingClientRect();
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = mapCanvas.width;
+      outCanvas.height = mapCanvas.height;
+      const ctx = outCanvas.getContext('2d');
+
+      const scale = outCanvas.width / containerRect.width;
+
+      // Draw map canvas
+      ctx.drawImage(mapCanvas, 0, 0);
+
+      // 2. Draw MapLibre Marker DOM overlays
+      const markerEls = Array.from(containerEl.querySelectorAll('.maplibregl-marker'));
+      for (const markerEl of markerEls) {
+        const mRect = markerEl.getBoundingClientRect();
+        const x = (mRect.left - containerRect.left) * scale;
+        const y = (mRect.top - containerRect.top) * scale;
+        const w = mRect.width * scale;
+        const h = mRect.height * scale;
+
+        const svgEl = markerEl.querySelector('svg');
+        if (svgEl) {
+          try {
+            const svgString = new XMLSerializer().serializeToString(svgEl);
+            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.src = url;
+            await new Promise((resolve, reject) => {
+              img.onload = () => resolve();
+              img.onerror = () => reject();
+            });
+            ctx.drawImage(img, x, y, w, h);
+            URL.revokeObjectURL(url);
+          } catch (e) {
+            console.warn('Failed to render marker SVG onto canvas:', e);
+          }
+        }
+      }
+
+      // 3. Draw Legend Overlay if visible
+      const legendEl = containerEl.querySelector('.map-legend');
+      if (legendEl) {
+        const lRect = legendEl.getBoundingClientRect();
+        const lx = (lRect.left - containerRect.left) * scale;
+        const ly = (lRect.top - containerRect.top) * scale;
+        const lw = lRect.width * scale;
+        const lh = lRect.height * scale;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+        ctx.shadowBlur = 12 * scale;
+        ctx.shadowOffsetY = 4 * scale;
+
+        const radius = 12 * scale;
+        ctx.beginPath();
+        ctx.moveTo(lx + radius, ly);
+        ctx.lineTo(lx + lw - radius, ly);
+        ctx.quadraticCurveTo(lx + lw, ly, lx + lw, ly + radius);
+        ctx.lineTo(lx + lw, ly + lh - radius);
+        ctx.quadraticCurveTo(lx + lw, ly + lh, lx + lw - radius, ly + lh);
+        ctx.lineTo(lx + radius, ly + lh);
+        ctx.quadraticCurveTo(lx, ly + lh, lx, ly + lh - radius);
+        ctx.lineTo(lx, ly + radius);
+        ctx.quadraticCurveTo(lx, ly, lx + radius, ly);
+        ctx.closePath();
+        ctx.fill();
+
+        // Legend items
+        const items = Array.from(legendEl.querySelectorAll('.map-legend__item'));
+        ctx.font = `600 ${Math.round(12 * scale)}px Inter, sans-serif`;
+        ctx.textBaseline = 'middle';
+
+        let currentY = ly + 18 * scale;
+        for (const item of items) {
+          const opacity = item.style.opacity ? parseFloat(item.style.opacity) : 1;
+          ctx.globalAlpha = opacity;
+
+          const lineSpan = item.querySelector('.map-legend__line');
+          const textSpan = item.querySelector('span:not(.map-legend__line)');
+
+          if (lineSpan) {
+            const lineStyle = window.getComputedStyle(lineSpan);
+            ctx.fillStyle = lineStyle.backgroundColor || '#2563eb';
+            ctx.fillRect(lx + 14 * scale, currentY - 1.5 * scale, 24 * scale, 3 * scale);
+          }
+
+          if (textSpan) {
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillText(textSpan.textContent, lx + 46 * scale, currentY);
+          }
+
+          currentY += 22 * scale;
+        }
+        ctx.restore();
+      }
+
+      // 4. Download file as timestamp
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+
+      const dataUrl = outCanvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `${timestamp}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+  }));
 
   // ── Precompute fast lookup maps for nodes & edges ────────────────────
   const { edgeMap, nodeCoordsMap } = useMemo(() => {
@@ -129,6 +305,7 @@ export default function MapView({
       zoom: DEFAULT_ZOOM,
       pitch: 0,
       attributionControl: false,
+      preserveDrawingBuffer: true,
     });
 
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -563,12 +740,9 @@ export default function MapView({
 
     // Fit map bounds on initial search result arrival or route mode switch
     if (!animState || !animState.isAnimating) {
-      if (activeCoords.length > 0) {
-        const bounds = activeCoords.reduce(
-          (b, c) => b.extend(c),
-          new maplibregl.LngLatBounds(activeCoords[0], activeCoords[0])
-        );
-        m.fitBounds(bounds, { padding: 60, duration: 800 });
+      const bounds = getVisualizationBounds(searchResult, routeMode, nodeCoordsMap);
+      if (bounds) {
+        m.fitBounds(bounds, { padding: 50, duration: 800 });
       }
     }
   }, [mapReady, searchResult, routeMode, animState?.completedLegsCoords, animState?.isAnimating]);
@@ -685,4 +859,7 @@ export default function MapView({
       )}
     </div>
   );
-}
+});
+
+export default MapView;
+

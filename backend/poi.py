@@ -23,8 +23,6 @@ ox.settings.log_console = True
 # ── Road-type parameter tables (Report Table 7) ───────────────────────
 # α(q): speed multiplier   ρ(q): risk score
 ROAD_TYPE_PARAMS = {
-    "motorway":      {"alpha": 0.40, "rho": 1.0},
-    "motorway_link": {"alpha": 0.40, "rho": 1.0},
     "trunk":         {"alpha": 0.45, "rho": 0.9},
     "trunk_link":    {"alpha": 0.45, "rho": 0.9},
     "primary":       {"alpha": 0.50, "rho": 0.8},
@@ -33,16 +31,8 @@ ROAD_TYPE_PARAMS = {
     "secondary_link":{"alpha": 0.60, "rho": 0.6},
     "tertiary":      {"alpha": 0.65, "rho": 0.5},
     "tertiary_link": {"alpha": 0.65, "rho": 0.5},
-    "unclassified":  {"alpha": 0.75, "rho": 0.3},
     "residential":   {"alpha": 0.75, "rho": 0.3},
     "living_street": {"alpha": 0.85, "rho": 0.1},
-    "pedestrian":    {"alpha": 0.90, "rho": 0.1},
-    "service":       {"alpha": 0.75, "rho": 0.3},
-    "footway":       {"alpha": 0.90, "rho": 0.1},
-    "cycleway":      {"alpha": 0.85, "rho": 0.1},
-    "path":          {"alpha": 0.85, "rho": 0.2},
-    "steps":         {"alpha": 0.95, "rho": 0.1},
-    "track":         {"alpha": 0.70, "rho": 0.3},
 }
 DEFAULT_PARAMS = {"alpha": 0.75, "rho": 0.3}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import MapView from './components/MapView';
 import ControlPanel from './components/ControlPanel';
 import StatsPanel from './components/StatsPanel';
@@ -7,7 +7,8 @@ import AnimationControls from './components/AnimationControls';
 import { fetchLocations, fetchNetwork, searchRoutes } from './utils/api';
 
 export default function App() {
-  // ── State ───────────────────────────────────────────────────────────
+  // ── State & Refs ───────────────────────────────────────────────────
+  const mapViewRef = useRef(null);
   const [pois, setPois] = useState([]);
   const [network, setNetwork] = useState(null);
   const [algorithm, setAlgorithm] = useState('astar');
@@ -83,6 +84,12 @@ export default function App() {
     setStatus({ text: 'Ready', type: 'info' });
   }, []);
 
+  const handleTakeScreenshot = useCallback(() => {
+    if (mapViewRef.current && mapViewRef.current.takeScreenshot) {
+      mapViewRef.current.takeScreenshot();
+    }
+  }, []);
+
   // Legs array for animation based on selected route mode
   const legs =
     routeMode === 'fastest'
@@ -109,6 +116,7 @@ export default function App() {
           isLoading={isLoading}
           showDebug={showDebug}
           setShowDebug={setShowDebug}
+          searchResult={searchResult}
         />
 
         {/* Stats */}
@@ -146,6 +154,7 @@ export default function App() {
 
       {/* Map */}
       <MapView
+        ref={mapViewRef}
         network={network}
         searchResult={searchResult}
         routeMode={routeMode}
@@ -161,6 +170,7 @@ export default function App() {
         <AnimationControls
           legs={legs}
           onAnimUpdate={setAnimState}
+          onTakeScreenshot={handleTakeScreenshot}
         />
       )}
     </div>

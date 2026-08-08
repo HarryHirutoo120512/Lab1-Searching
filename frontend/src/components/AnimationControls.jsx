@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 export default function AnimationControls({
   legs,
   onAnimUpdate,
+  onTakeScreenshot,
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -142,6 +143,24 @@ export default function AnimationControls({
     if (timerRef.current) clearTimeout(timerRef.current);
   };
 
+  const handlePrevStep = () => {
+    if (isPlaying) handlePause();
+    if (currentIndex.current > 0) {
+      currentIndex.current--;
+      setProgress(currentIndex.current / totalSteps);
+      emitStep(currentIndex.current);
+    }
+  };
+
+  const handleNextStep = () => {
+    if (isPlaying) handlePause();
+    if (currentIndex.current < totalSteps) {
+      currentIndex.current++;
+      setProgress(currentIndex.current / totalSteps);
+      emitStep(currentIndex.current);
+    }
+  };
+
   const handleReset = () => {
     handlePause();
     currentIndex.current = 0;
@@ -170,19 +189,56 @@ export default function AnimationControls({
       <button
         className="animation-controls__btn"
         onClick={isPlaying ? handlePause : handlePlay}
-        title={isPlaying ? 'Pause' : 'Play'}
+        title={isPlaying ? 'Pause (Tạm dừng)' : 'Play (Phát)'}
       >
-        {isPlaying ? '⏸' : '▶'}
+        {isPlaying ? (
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style={{ marginLeft: '2px' }}>
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        )}
+      </button>
+
+      {/* Previous Step */}
+      <button
+        className="animation-controls__btn"
+        onClick={handlePrevStep}
+        disabled={currentIndex.current <= 0}
+        title="Previous step (Bước trước)"
+        style={{ background: '#4a90d9' }}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+        </svg>
+      </button>
+
+      {/* Next Step */}
+      <button
+        className="animation-controls__btn"
+        onClick={handleNextStep}
+        disabled={currentIndex.current >= totalSteps}
+        title="Next step (Bước tiếp)"
+        style={{ background: '#4a90d9' }}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+        </svg>
       </button>
 
       {/* Reset */}
       <button
         className="animation-controls__btn"
         onClick={handleReset}
-        title="Reset"
+        title="Reset (Đặt lại)"
         style={{ background: '#6c757d' }}
       >
-        ↺
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+        </svg>
       </button>
 
       {/* Progress bar */}
@@ -202,10 +258,23 @@ export default function AnimationControls({
       <button
         className="animation-controls__btn"
         onClick={cycleSpeed}
-        title={`Speed: ${speed}x`}
+        title={`Speed: ${speed}x (Tốc độ)`}
         style={{ background: '#845ef7', fontSize: '11px', fontWeight: 700 }}
       >
         {speed}x
+      </button>
+
+      {/* Screenshot */}
+      <button
+        className="animation-controls__btn"
+        onClick={onTakeScreenshot}
+        title="Take screenshot (Chụp ảnh bản đồ)"
+        style={{ background: '#10b981' }}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
       </button>
     </div>
   );
