@@ -57,6 +57,7 @@ def _build_result(
                 "street_name": edge.get("street_name", ""),
                 "average_speed": edge["average_speed"],
                 "max_speed": edge["max_speed"],
+                "geometry": edge.get("geometry", []),
             })
 
     return {
